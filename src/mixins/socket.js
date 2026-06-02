@@ -673,11 +673,30 @@ export default {
          * @param {string} uploadedJSON JSON to upload
          * @param {string} importHandle Type of import. If set to
          * most data in database will be replaced
+         * @param {boolean} deleteBefore Delete existing configuration before import
          * @param {socketCB} callback Callback for socket response
          * @returns {void}
          */
-        uploadBackup(uploadedJSON, importHandle, callback) {
-            socket.emit("uploadBackup", uploadedJSON, importHandle, callback);
+        uploadBackup(uploadedJSON, importHandle, deleteBefore, callback) {
+            socket.emit(
+                "uploadBackup",
+                uploadedJSON,
+                {
+                    importHandle,
+                    deleteBefore: deleteBefore === true,
+                },
+                callback
+            );
+        },
+
+        /**
+         * Download backup JSON from server
+         * @param {boolean} includeSensitive Include passwords and tokens
+         * @param {socketCB} callback Callback for socket response
+         * @returns {void}
+         */
+        getBackup(includeSensitive, callback) {
+            socket.emit("getBackup", includeSensitive, callback);
         },
 
         /**

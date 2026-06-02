@@ -2,9 +2,15 @@
     <div class="d-flex justify-content-center align-items-center">
         <div class="logo d-flex flex-column justify-content-center align-items-center">
             <object class="my-4" width="200" height="200" data="/icon.svg" />
-            <div class="fs-4 fw-bold">Uptime Kuma</div>
+            <div class="fs-4 fw-bold">Uptime Kuma (Fork Version)</div>
             <div>{{ $t("versionIs", { version: $root.info.version }) }}</div>
             <div class="frontend-version">{{ $t("frontendVersionIs", { version: $root.frontendVersion }) }}</div>
+
+            <div class="my-2 fork-link">
+                <a href="https://github.com/treimers/uptime-kuma" target="_blank" rel="noopener">
+                    {{ $t("aboutForkLink") }}
+                </a>
+            </div>
 
             <div v-if="!$root.isFrontendBackendVersionMatched" class="alert alert-warning mt-4" role="alert">
                 ⚠️ {{ $t("Frontend Version do not match backend version!") }}
@@ -70,6 +76,10 @@ export default {
 }
 
 .update-link {
+    font-size: 0.8em;
+}
+
+.fork-link {
     font-size: 0.8em;
 }
 
