@@ -12,6 +12,17 @@ const viteCompressionFilter = /\.(js|mjs|json|css|html|svg)$/i;
 export default defineConfig({
     server: {
         port: 3000,
+        proxy: {
+            // Backend runs on 3001 in development (see src/mixins/socket.js)
+            "/api": {
+                target: "http://127.0.0.1:3001",
+                changeOrigin: true,
+            },
+            "/metrics": {
+                target: "http://127.0.0.1:3001",
+                changeOrigin: true,
+            },
+        },
     },
     define: {
         FRONTEND_VERSION: JSON.stringify(process.env.npm_package_version),

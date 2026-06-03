@@ -337,6 +337,10 @@ let needSetup = false;
     // With Basic Auth using the first user's username/password
     app.get("/metrics", apiAuth, prometheusAPIMetrics());
 
+    // API Router (before static files so /api/* is never served as frontend assets)
+    const apiRouter = require("./routers/api-router");
+    app.use(apiRouter);
+
     app.use(
         "/",
         expressStaticGzip("dist", {
@@ -350,10 +354,6 @@ let needSetup = false;
     app.get("/.well-known/change-password", async (_, response) => {
         response.redirect("https://github.com/louislam/uptime-kuma/wiki/Reset-Password-via-CLI");
     });
-
-    // API Router
-    const apiRouter = require("./routers/api-router");
-    app.use(apiRouter);
 
     // Status Page Router
     const statusPageRouter = require("./routers/status-page-router");

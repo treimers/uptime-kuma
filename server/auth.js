@@ -34,32 +34,137 @@ exports.login = async function (username, password) {
 };
 
 /**
+ * Look up an API key record if the key is valid
+ * @param {string} key API key to verify
+ * @returns {Promise<Bean|null>} API key bean or null
+ */
+async function findApiKey(key) {
+    if (typeof key !== "string") {
+        return null;
+    }
+
+    // uk prefix + key ID is before _
+    const underscoreIndex = key.indexOf("_");
+    if (underscoreIndex < 3 || !key.startsWith("uk")) {
+        return null;
+    }
+
+    const index = key.substring(2, underscoreIndex);
+    const clear = key.substring(underscoreIndex + 1);
+
+    const hash = await R.findOne("api_key", " id=? ", [index]);
+
+    if (hash === null) {
+        return null;
+    }
+
+    const current = dayjs();
+    const expiry = dayjs(hash.expires);
+    if (expiry.diff(current) < 0 || !hash.active) {
+        return null;
+    }
+
+    if (!passwordHash.verify(clear, hash.key)) {
+        return null;
+    }
+
+    return hash;
+}
+
+/**
  * Validate a provided API key
  * @param {string} key API key to verify
  * @returns {boolean} API is ok?
  */
 async function verifyAPIKey(key) {
-    if (typeof key !== "string") {
-        return false;
+    return (await findApiKey(key)) !== null;
+}
+
+/**
+ * Read HTTP Basic Auth credentials from the request
+ * @param {express.Request} req Express request object
+ * @returns {{user: string, pass: string}|null} Credentials or null
+ */
+function getRequestBasicAuth(req) {
+    if (req.auth && typeof req.auth.pass === "string") {
+        return {
+            user: typeof req.auth.user === "string" ? req.auth.user : "",
+            pass: req.auth.pass,
+        };
     }
 
-    // uk prefix + key ID is before _
-    let index = key.substring(2, key.indexOf("_"));
-    let clear = key.substring(key.indexOf("_") + 1, key.length);
-
-    let hash = await R.findOne("api_key", " id=? ", [index]);
-
-    if (hash === null) {
-        return false;
+    const header = req.headers.authorization;
+    if (typeof header !== "string" || !header.startsWith("Basic ")) {
+        return null;
     }
 
-    let current = dayjs();
-    let expiry = dayjs(hash.expires);
-    if (expiry.diff(current) < 0 || !hash.active) {
-        return false;
+    const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
+    const separatorIndex = decoded.indexOf(":");
+
+    if (separatorIndex === -1) {
+        return null;
     }
 
-    return hash && passwordHash.verify(clear, hash.key);
+    return {
+        user: decoded.slice(0, separatorIndex),
+        pass: decoded.slice(separatorIndex + 1),
+    };
+}
+
+/**
+ * Resolve user ID from HTTP Basic Auth (API key or username/password)
+ * @param {{user: string, pass: string}} auth Credentials
+ * @returns {Promise<number>} User ID
+ */
+async function resolveUserIdFromBasicAuth(auth) {
+    if (await Settings.get("apiKeysEnabled")) {
+        const apiKey = await findApiKey(auth.pass);
+        if (!apiKey) {
+            throw new Error("Unauthorized");
+        }
+        return apiKey.user_id;
+    }
+
+    const user = await exports.login(auth.user, auth.pass);
+    if (!user) {
+        throw new Error("Unauthorized");
+    }
+
+    return user.id;
+}
+
+/**
+ * Resolve the authenticated user ID from an API request (after apiAuth / apiAuthRequired)
+ * @param {express.Request} req Express request object
+ * @returns {Promise<number>} User ID
+ */
+exports.getAuthenticatedUserId = async function (req) {
+    const auth = getRequestBasicAuth(req);
+
+    if (!auth) {
+        if (await Settings.get("disableAuth")) {
+            const user = await R.findOne("user", " active = 1 ");
+            if (!user) {
+                throw new Error("No active user found");
+            }
+            return user.id;
+        }
+        throw new Error("Unauthorized");
+    }
+
+    return await resolveUserIdFromBasicAuth(auth);
+};
+
+/**
+ * Send a JSON 401 response for API routes
+ * @param {express.Response} res Express response object
+ * @returns {void}
+ */
+function sendApiUnauthorized(res) {
+    res.status(401).json({
+        status: "fail",
+        msg: "Unauthorized",
+    });
 }
 
 /**
@@ -172,5 +277,31 @@ exports.apiAuth = async function (req, res, next) {
         middleware(req, res, next);
     } else {
         next();
+    }
+};
+
+/**
+ * Require API key or username/password even when UI auth is disabled (disableAuth).
+ * Used for sensitive HTTP APIs such as backup export.
+ * @param {express.Request} req Express request object
+ * @param {express.Response} res Express response object
+ * @param {express.NextFunction} next Next handler in chain
+ * @returns {Promise<void>}
+ */
+exports.apiAuthRequired = async function (req, res, next) {
+    const auth = getRequestBasicAuth(req);
+
+    if (!auth) {
+        sendApiUnauthorized(res);
+        return;
+    }
+
+    try {
+        await resolveUserIdFromBasicAuth(auth);
+        req.auth = auth;
+        next();
+    } catch (e) {
+        log.warn("api-auth", "Failed API auth attempt for protected route");
+        sendApiUnauthorized(res);
     }
 };

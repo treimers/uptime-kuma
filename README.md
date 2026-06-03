@@ -11,6 +11,8 @@ Uptime Kuma is an easy-to-use self-hosted monitoring tool.
 <img src="https://weblate.kuma.pet/widgets/uptime-kuma/-/svg-badge.svg" alt="Translation status" />
 </a>
 
+> **Fork:** This repository is a fork of [louislam/uptime-kuma](https://github.com/louislam/uptime-kuma), maintained at [treimers/uptime-kuma](https://github.com/treimers/uptime-kuma). The [backup & restore](#backup--restore-fork-feature) HTTP export described below is a **fork-only** feature and is not available in upstream Uptime Kuma.
+
 <img src="https://user-images.githubusercontent.com/1336778/212262296-e6205815-ad62-488c-83ec-a5b0d0689f7c.jpg" width="700" alt="Uptime Kuma Dashboard Screenshot" />
 
 ## 🥔 Live Demo
@@ -34,6 +36,58 @@ It is a temporary live demo, all data will be deleted after 10 minutes. Sponsore
 - Certificate info
 - Proxy support
 - 2FA support
+
+## Fork features
+
+Features in this section exist only in this fork (or differ from upstream). When upgrading from upstream, check for merge conflicts in the listed files.
+
+### Backup & restore (fork feature)
+
+Uptime Kuma can export and import monitor/notification configuration as JSON (Settings → Backup). Upstream considers this flow limited and recommends backing up the `./data/` directory instead; this fork keeps the UI import/export and adds an **HTTP export** for automation (e.g. `curl` in cron jobs).
+
+| Action | Web UI | HTTP API (this fork) |
+|--------|--------|----------------------|
+| Export backup | Settings → Backup → Export | `GET /api/backup` |
+| Restore backup | Settings → Backup → Import | not available via API |
+
+**Export via API**
+
+Authentication matches the Prometheus endpoint (`/metrics`): enable API keys under Settings → API Keys, or use HTTP Basic Auth with your Uptime Kuma username and password.
+
+> **Port in development:** With `npm run dev`, the Vite UI listens on **3000** and the Node.js API on **3001**. Use port **3001** for `curl` (or port 3000 after the Vite proxy forwards `/api` to the backend). A request to port 3000 without the proxy returns the frontend HTML, not JSON.
+
+```bash
+# API key (username is ignored; password is the full key, e.g. uk42_…)
+curl -u 'anything:uk42_YOUR_API_KEY' \
+  'http://localhost:3001/api/backup' \
+  -o "Uptime_Kuma_Backup_$(date +%Y_%m_%d-%H_%M_%S).json"
+
+# Username/password (when API keys are disabled)
+curl -u 'admin:YOUR_PASSWORD' \
+  'https://your-host:3001/api/backup' \
+  -o backup.json
+
+# Include notification tokens and other secrets (same as the UI checkbox)
+curl -u 'admin:YOUR_PASSWORD' \
+  'https://your-host:3001/api/backup?includeSensitive=true' \
+  -o backup-sensitive.json
+```
+
+Query parameter `includeSensitive` accepts `true` or `1`. The response is JSON with `Content-Disposition` set for a filename like `Uptime_Kuma_Backup_YYYY_MM_DD-HH_mm_ss.json`.
+
+**Troubleshooting `Unauthorized`**
+
+- Restart the Node.js server after code changes (`npm run dev` restarts both Vite and the backend on **3001**).
+- Use the **full** key from the “Key Added” dialog (`uk<ID>_<secret>`). Creating a key enables API-key auth automatically.
+- If API keys are disabled in settings, use your Uptime Kuma **username and password** in `curl -u`, not an API key.
+- When setting an expiry date, choose **Don't expire** or a future date; a default of “today 00:00” is already expired later the same day.
+- The backup API always requires credentials, even when **Disable Auth** is enabled for the web UI.
+
+**Restore**
+
+Use Settings → Backup → Import in the web UI. There is no restore HTTP endpoint in this fork.
+
+**Implementation (for maintainers):** `server/routers/api-router.js` (`GET /api/backup`), `server/auth.js` (`getAuthenticatedUserId`), shared logic in `server/backup.js` and `server/socket-handlers/backup-socket-handler.js`.
 
 ## 🔧 How to Install
 
@@ -79,7 +133,7 @@ Requirements:
 - [pm2](https://pm2.keymetrics.io/) - For running Uptime Kuma in the background
 
 ```bash
-git clone https://github.com/louislam/uptime-kuma.git
+git clone https://github.com/treimers/uptime-kuma.git
 cd uptime-kuma
 npm run setup
 

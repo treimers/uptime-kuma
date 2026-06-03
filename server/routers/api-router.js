@@ -18,6 +18,8 @@ const { Prometheus } = require("../prometheus");
 const Database = require("../database");
 const { UptimeCalculator } = require("../uptime-calculator");
 const { Settings } = require("../settings");
+const { apiAuthRequired, getAuthenticatedUserId } = require("../auth");
+const { Backup } = require("../backup");
 
 let router = express.Router();
 
@@ -42,6 +44,42 @@ router.get("/api/entry-page", async (request, response) => {
         result.entryPage = server.entryPage;
     }
     response.json(result);
+});
+
+router.get("/api/backup", apiAuthRequired, async (request, response) => {
+    try {
+        const userID = await getAuthenticatedUserId(request);
+        const includeSensitive =
+            request.query.includeSensitive === "true" || request.query.includeSensitive === "1";
+        const backupData = await Backup.export(userID, includeSensitive);
+
+        log.info("backup", `Export via API, User ID: ${userID}, includeSensitive: ${includeSensitive}`);
+
+        const filename = `Uptime_Kuma_Backup_${dayjs().format("YYYY_MM_DD-HH_mm_ss")}.json`;
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        response.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        response.json(backupData);
+    } catch (error) {
+        log.error("backup", error.message);
+
+        if (error.message === "Unauthorized") {
+            response.status(401).json({
+                status: "fail",
+                msg: error.message,
+            });
+            return;
+        }
+
+        if (error.message === "No active user found") {
+            response.status(503).json({
+                status: "fail",
+                msg: error.message,
+            });
+            return;
+        }
+
+        sendHttpError(response, error.message);
+    }
 });
 
 router.all("/api/push/:pushToken", async (request, response) => {
